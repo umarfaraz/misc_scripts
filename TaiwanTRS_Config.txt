@@ -1,4 +1,0 @@
-websso_user=sso_rokadm
-rcas_url=http://myrcasnew.com
-websso_pass=MyNewPass$123
-my_name=faraz
