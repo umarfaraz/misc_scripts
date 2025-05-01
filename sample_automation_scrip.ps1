@@ -3,7 +3,7 @@ param(
     [string]$Environment,
     
     [Parameter(Mandatory=$true)]
-    [ValidateSet("igm", "email")]
+    [ValidateSet("chat", "email")]
     [string]$Type
 )
 
