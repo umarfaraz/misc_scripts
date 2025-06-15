@@ -52,36 +52,57 @@ if [ -z "$PASSWORD" ] || [ "$PASSWORD" == "null" ]; then
   exit 1
 fi
 log_message "Password retrieved successfully."
-exit 0
 
-# Step 2: Update Primary Database Password
-log_message "Updating password on primary database..."
-PRIMARY_RESPONSE=$(curl -s -X POST "$PRIMARY_DB_API_URL" \
-  -H "Authorization: Bearer $BEARER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"account\": \"$DB_ACCOUNT\", \"password\": \"$PASSWORD\"}")
+# Variables
+bodyString=""
+baseUrl="https://cirruspl-datake.com/api/v1/"
+accessToken="$accesstoken"
 
-PRIMARY_STATUS=$(echo "$PRIMARY_RESPONSE" | jq -r '.status')
-if [ "$PRIMARY_STATUS" != "success" ]; then
-  log_message "Error: Failed to update password on primary database. Response: $PRIMARY_RESPONSE"
-  exit 1
-fi
-log_message "Password updated successfully on primary database."
+# Convert bodyString to JSON (assuming it's already valid JSON)
+bodyJson=$(echo "$bodyString" | jq '.')
 
-# Step 3: Update Secondary Database Password
-log_message "Updating password on secondary database..."
-SECONDARY_RESPONSE=$(curl -s -X POST "$SECONDARY_DB_API_URL" \
-  -H "Authorization: Bearer $BEARER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"account\": \"$DB_ACCOUNT\", \"password\": \"$PASSWORD\"}")
+# Prepare the POST request URL
+uri="${baseUrl}TriggerPipelineWithUserToken"
 
-SECONDARY_STATUS=$(echo "$SECONDARY_RESPONSE" | jq -r '.status')
-if [ "$SECONDARY_STATUS" != "success" ]; then
-  log_message "Error: Failed to update password on secondary database. Response: $SECONDARY_RESPONSE"
-  exit 1
-fi
-log_message "Password updated successfully on secondary database."
+# Send POST request
+buildResponse=$(curl -s -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $accessToken" -d "$bodyJson" "$uri")
 
-# Step 4: Success Message
-log_message "Password sync between primary and secondary databases completed successfully."
+# Extract buildId from the response
+buildId=$(echo "$buildResponse" | jq -r '.buildId')
+
+# Prepare URLs for status and task log
+statusUrl="${baseUrl}GetBuildStatus?buildId=${buildId}"
+taskLogUrl="${baseUrl}GetBuildTaskLog?buildId=${buildId}"
+
+done=false
+
+# Loop to check status
+while [ "$done" = false ]; do
+    # Get build status
+    resp=$(curl -s -X GET -H "Content-Type: application/json" -H "Authorization: Bearer $accessToken" "$statusUrl")
+
+    # Get task logs
+    jobLogs=$(curl -s -X GET -H "Content-Type: application/json" -H "Authorization: Bearer $accessToken" "$taskLogUrl")
+
+    # Check if jobLogs contains records
+    recordId=$(echo "$jobLogs" | jq -r '.record.id')
+    if [ -n "$recordId" ]; then
+        echo "Outputting progress"
+        echo "$resp" | jq '.status'
+        echo "$jobLogs" | jq -r '.records[] | select(.type == "job" or .type == "task" and .state != "pending") | "\(.type) \(.name) \(.result) \(.state) \(.starttime) \(.finishtime)"'
+    else
+        echo "$resp" | jq '.status'
+    fi
+
+    # Check if the build is completed, failed, or canceled
+    status=$(echo "$resp" | jq -r '.status')
+    if [[ "$status" == "completed" || "$status" == "failed" || "$status" == "canceled" ]]; then
+        echo "$resp" | jq '.result'
+        echo "$jobLogs" | jq -r '.records[] | select(.type == "job" or .type == "task" and .state != "pending") | "\(.type) \(.name) \(.result) \(.state) \(.starttime) \(.finishtime)"'
+        done=true
+    fi
+
+    # Wait for 30 seconds before the next check
+    sleep 30
+done
 
