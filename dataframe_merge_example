@@ -1,0 +1,22 @@
+import pandas as pd
+
+# Ensure 'issuer' in fund_df is uppercase for matching
+fund_df['issuer_upper'] = fund_df['issuer'].astype(str).str.upper()
+
+# Merge on 'issuer_head' and upper('issuer')
+merged_record_df = pd.merge(
+    main_record_df,
+    fund_df[['issuer_short_name', 'issuer_upper']],
+    how='left',
+    left_on='issuer_head',
+    right_on='issuer_upper'
+)
+
+# Rename 'issuer_short_name' to 'CLO Name'
+merged_record_df.rename(columns={'issuer_short_name': 'CLO Name'}, inplace=True)
+
+# Fill NaN in 'CLO Name' with empty string
+merged_record_df['CLO Name'] = merged_record_df['CLO Name'].fillna('')
+
+# Drop the 'issuer_upper' column as it's no longer needed
+merged_record_df.drop('issuer_upper', axis=1, inplace=True)
